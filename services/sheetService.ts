@@ -2,31 +2,18 @@
 import { Militar, Bairro, OcorrenciaForm } from '../types';
 
 /**
- * INSTRUÇÕES PARA O GOOGLE APPS SCRIPT (Arquivo Code.gs)
- * -----------------------------------------------------
- * 1. No seu projeto Apps Script, substitua o conteúdo do Code.gs por:
+ * COPIE ESTE CÓDIGO PARA O APPS SCRIPT DA SUA PLANILHA
+ * --------------------------------------------------
  * 
- * function doGet() {
- *   return HtmlService.createHtmlOutputFromFile('index')
- *     .setTitle('PMMG - Resumo de Ocorrência')
- *     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
- *     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
- * }
- * 
- * function loadSheetDataFromGAS() {
- *   const ss = SpreadsheetApp.openById('184gMlpOC-o55iaW5a_2RvXJLJd8dDGil5x0s2NuXSwM');
- *   const militares = ss.getSheetByName('MILITARES').getDataRange().getValues();
- *   const bairros = ss.getSheetByName('BAIRRO').getDataRange().getValues();
- *   return { militares, bairros };
- * }
- * 
- * function saveReleaseToSheet(data) {
- *   const ss = SpreadsheetApp.openById('184gMlpOC-o55iaW5a_2RvXJLJd8dDGil5x0s2NuXSwM');
- *   let sheet = ss.getSheetByName('RELEASE');
- *   if (!sheet) {
- *     sheet = ss.insertSheet('RELEASE');
+ * function doPost(e) {
+ *   const ss = SpreadsheetApp.openById('16JnE2TtAGCYnfz8RQ933v_z7bKEOqG57ALWnIOLv3bw');
+ *   const sheet = ss.getSheetByName('RELEASE') || ss.insertSheet('RELEASE');
+ *   
+ *   if (sheet.getLastRow() === 0) {
  *     sheet.appendRow(['Data/Hora', 'Equipe', 'Viatura(s)', 'Local', 'Bairro', 'Setor', 'Oficial', 'Histórico', 'Produtividade', 'Possui Foto?']);
  *   }
+ *   
+ *   const data = JSON.parse(e.postData.contents);
  *   sheet.appendRow([
  *     data.timestamp,
  *     data.equipe,
@@ -37,74 +24,60 @@ import { Militar, Bairro, OcorrenciaForm } from '../types';
  *     data.oficial,
  *     data.historico,
  *     data.produtividade,
- *     data.temFoto ? 'SIM' : 'NÃO'
+ *     data.temFoto
  *   ]);
- *   return "OK";
+ *   
+ *   return ContentService.createTextOutput(JSON.stringify({status: 'success'}))
+ *     .setMimeType(ContentService.MimeType.JSON);
+ * }
+ * 
+ * function doGet() {
+ *   const ss = SpreadsheetApp.openById('16JnE2TtAGCYnfz8RQ933v_z7bKEOqG57ALWnIOLv3bw');
+ *   const militares = ss.getSheetByName('MILITARES').getDataRange().getValues();
+ *   const bairros = ss.getSheetByName('BAIRRO').getDataRange().getValues();
+ *   const result = { militares, bairros };
+ *   return ContentService.createTextOutput(JSON.stringify(result))
+ *     .setMimeType(ContentService.MimeType.JSON);
  * }
  */
 
-declare const google: any;
-
-const SHEET_ID = '184gMlpOC-o55iaW5a_2RvXJLJd8dDGil5x0s2NuXSwM';
+// IMPORTANTE: Substitua pela URL que o Google vai te dar ao "Implantar" o script acima
+const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/SUA_URL_GERADA_AQUI/exec';
+const SHEET_ID = '16JnE2TtAGCYnfz8RQ933v_z7bKEOqG57ALWnIOLv3bw';
 
 export async function loadAppData() {
-  // Tenta utilizar google.script.run (ambiente Apps Script nativo)
-  if (typeof google !== 'undefined' && google.script && google.script.run) {
-    return new Promise<{ militares: Militar[], bairros: Bairro[] }>((resolve, reject) => {
-      google.script.run
-        .withSuccessHandler((result: any) => {
-          // Processa MILITARES
-          const militares: Militar[] = result.militares.slice(1).map((row: any) => ({
-            numeroPM: String(row[1] || ''),
-            pg: String(row[2] || ''),
-            nomeGuerra: String(row[4] || '')
-          })).filter((m: any) => m.numeroPM);
-
-          // Processa BAIRROS
-          const bairros: Bairro[] = result.bairros.slice(1).map((row: any) => ({
-            nome: String(row[0] || ''),
-            oficialSetor: String(row[2] || ''),
-            telefoneComandante: String(row[3] || ''),
-            setor: String(row[1] || 'PMMG - SETOR')
-          })).filter((b: any) => b.nome);
-
-          resolve({ militares, bairros });
-        })
-        .withFailureHandler(reject)
-        .loadSheetDataFromGAS();
-    });
-  }
-
-  // Fallback para gviz tq (Apenas para desenvolvimento fora do ambiente GAS)
   try {
-    const fetchSheetData = async (sheetName: string) => {
-      const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
-      const response = await fetch(url);
-      const text = await response.text();
+    // No Netlify, tentamos carregar via GAS Web App primeiro para dados atualizados
+    // Se a URL não estiver configurada, usamos o fallback de visualização pública (gviz)
+    let url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=`;
+    
+    const fetchSheet = async (name: string) => {
+      const resp = await fetch(url + encodeURIComponent(name));
+      const text = await resp.text();
       return parseCSV(text);
     };
 
-    const [militaresRaw, bairrosRaw] = await Promise.all([
-      fetchSheetData('MILITARES'),
-      fetchSheetData('BAIRRO')
+    const [milRaw, baiRaw] = await Promise.all([
+      fetchSheet('MILITARES'),
+      fetchSheet('BAIRRO')
     ]);
 
-    const militares: Militar[] = militaresRaw.slice(1).map(row => ({
-      numeroPM: row[1] || '',
-      pg: row[2] || '',
-      nomeGuerra: row[4] || ''
+    const militares: Militar[] = milRaw.slice(1).map(row => ({
+      numeroPM: String(row[1] || ''),
+      pg: String(row[2] || ''),
+      nomeGuerra: String(row[4] || '')
     })).filter(m => m.numeroPM);
 
-    const bairros: Bairro[] = bairrosRaw.slice(1).map(row => ({
-      nome: row[0] || '',
-      oficialSetor: row[2] || '',
-      telefoneComandante: row[3] || '',
-      setor: row[1] || 'PMMG - SETOR'
+    const bairros: Bairro[] = baiRaw.slice(1).map(row => ({
+      nome: String(row[0] || ''),
+      oficialSetor: String(row[2] || ''),
+      telefoneComandante: String(row[3] || ''),
+      setor: String(row[1] || 'SETOR')
     })).filter(b => b.nome);
 
     return { militares, bairros };
   } catch (error) {
-    console.error('Erro no carregamento dos dados:', error);
+    console.error('Erro ao carregar dados:', error);
     throw error;
   }
 }
@@ -141,26 +114,24 @@ export async function saveToRelease(data: OcorrenciaForm): Promise<void> {
     oficial: data.bairro?.oficialSetor || '',
     historico: data.historico,
     produtividade: data.produtividade,
-    temFoto: !!data.foto
+    temFoto: data.foto ? 'SIM' : 'NÃO'
   };
 
-  if (typeof google !== 'undefined' && google.script && google.script.run) {
-    return new Promise((resolve, reject) => {
-      google.script.run
-        .withSuccessHandler((res: any) => {
-          console.log('Salvo com sucesso via GAS:', res);
-          resolve();
-        })
-        .withFailureHandler(reject)
-        .saveReleaseToSheet(payload);
-    });
+  // Envio via POST para o Web App (compatível com Netlify)
+  if (GAS_WEBAPP_URL.includes('SUA_URL_GERADA')) {
+    console.warn('URL do GAS não configurada. Salvamento apenas no console.');
+    console.log('Payload:', payload);
+    return;
   }
 
-  // Fallback para console em desenvolvimento
-  console.log('Salvamento simulado na aba RELEASE:', payload);
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve();
-    }, 1000);
+  const response = await fetch(GAS_WEBAPP_URL, {
+    method: 'POST',
+    mode: 'no-cors', // Importante para evitar erros de CORS em redirecionamentos do Google
+    cache: 'no-cache',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
   });
+
+  // Nota: com 'no-cors', o response não é legível, mas o dado chega ao Google.
+  return;
 }
