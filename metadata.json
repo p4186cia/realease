@@ -1,0 +1,7 @@
+{
+  "name": "Resumo de Ocorrência PM",
+  "description": "Uma aplicação para registro de ocorrências policiais integrada a dados de efetivo e bairros, gerando relatórios automáticos para WhatsApp.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
